@@ -4,7 +4,7 @@
 
 ## Integración HDFS - Hive - herramientas BI
 
-Lo primera que vamos a hacer es crear un script en Python [visualize.py](./visualize.py) que nos permita, usando pyarrow, obtener el esquema del fichero Flights.parquet y entender su contenido.
+Lo primera que vamos a hacer es crear un script en Python [visualize.py](tr2/visualize.py) que nos permita, usando pyarrow, obtener el esquema del fichero Flights.parquet y entender su contenido.
 ```bash
 $ ./visualize.py
 Esquema del archivo Parquet:
