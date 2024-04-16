@@ -1,0 +1,49 @@
+version: "2"
+services:
+  namenode:
+    image: apache/hadoop:3
+    hostname: namenode
+    command: ["hdfs", "namenode"]
+    ports:
+      - 9870:9870
+    env_file:
+      - ./config
+    environment:
+      ENSURE_NAMENODE_DIR: "/tmp/hadoop-root/dfs/name"
+    networks:
+      - hadoop-network
+  
+
+  datanode:
+    image: apache/hadoop:3
+    command: ["hdfs", "datanode"]
+    env_file:
+      - ./config  
+    networks:
+      - hadoop-network
+    depends_on:
+      - namenode
+
+  hiveserver2:
+    image: apache/hive:3.1.3
+    ports:
+      - "10000:10000"
+      - "10002:10002"
+    environment:
+      SERVICE_NAME: hiveserver2
+    networks:
+      - hadoop-network
+    volumes:
+      - .:/workspace
+      
+  superset:
+    image: acpmialj/ipmd:ssuperset
+    ports:
+      - "8080:8088"
+    networks:
+      - hadoop-network
+
+
+networks:
+  hadoop-network:
+    driver: bridge
