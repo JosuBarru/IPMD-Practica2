@@ -27,7 +27,9 @@ Primeras filas del contenido del archivo Parquet:
 
 Se ha creado un fichero compose único [docker-compose.yaml](./docker-compose.yaml) que define un clúster Hadoop con un namenode y un datanode, un servidor Hive y un servidor Superset, todos ellos conectados a una red llamada tr2_hadoop-network. La configuración necesaria para el sistema hdfs reside en el fichero [config](tr2/config)
 
-Creamos la carpeta user en HDFS y le damos privilegios 777.
+
+
+Una vez lanzados los servicios `docker compose up -d`, creamos la carpeta user en HDFS y le damos privilegios 777.
 
 ```bash 
 $ docker exec -it tr2-namenode-1 /bin/bash

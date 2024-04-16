@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-"""crea un script python que usando pyarrow obtener el esquema del fichero Flights.parquet, y entender su contenido."""
-
 import pyarrow.parquet as pq
 
 parquet_file = "./Flights.parquet"
