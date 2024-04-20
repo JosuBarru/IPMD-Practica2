@@ -4,7 +4,7 @@
 
 ## Integración HDFS - Hive - herramientas BI
 
-Lo primera que vamos a hacer es crear un script en Python [visualize.py](tr2/visualize.py) que nos permita, usando pyarrow, obtener el esquema del fichero Flights.parquet y entender su contenido.
+Lo primera que vamos a hacer es crear un script en Python [visualize.py](parte1/tr2/visualize.py) que nos permita, usando pyarrow, obtener el esquema del fichero Flights.parquet y entender su contenido.
 ```bash
 $ ./visualize.py
 Esquema del archivo Parquet:
@@ -25,7 +25,7 @@ Primeras filas del contenido del archivo Parquet:
 4  2006-01-05         -3        -17       321      2475   8.950000  11.883333
 ```
 
-Se ha creado un fichero compose único [docker-compose.yaml](./docker-compose.yaml) que define un clúster Hadoop con un namenode y un datanode, un servidor Hive y un servidor Superset, todos ellos conectados a una red llamada tr2_hadoop-network. La configuración necesaria para el sistema hdfs reside en el fichero [config](tr2/config)
+Se ha creado un fichero compose único [docker-compose.yaml](parte1/docker-compose.yaml) que define un clúster Hadoop con un namenode y un datanode, un servidor Hive y un servidor Superset, todos ellos conectados a una red llamada tr2_hadoop-network. La configuración necesaria para el sistema hdfs reside en el fichero [config](parte1/tr2/config)
 
 
 
@@ -60,10 +60,10 @@ Abrimos un CLI Beeline en el mismo contenedor y creamos una tabla externa en Hiv
 
 Crear una tabla gestionada por Hive (no externa), "hive_flights", con exactamente el mismo contenido y esquema que "flights".
   
-    ```bash
-    > CREATE TABLE IF NOT EXISTS hive_flights (    FL_DATE DATE,    DEP_DELAY SMALLINT,    ARR_DELAY SMALLINT,    AIR_TIME SMALLINT,    DISTANCE SMALLINT,    DEP_TIME FLOAT,    ARR_TIME FLOAT) STORED AS PARQUET;
-    > INSERT INTO TABLE hive_flights SELECT * FROM flights;
-    ```
+```bash
+> CREATE TABLE IF NOT EXISTS hive_flights (    FL_DATE DATE,    DEP_DELAY SMALLINT,    ARR_DELAY SMALLINT,    AIR_TIME SMALLINT,    DISTANCE SMALLINT,    DEP_TIME FLOAT,    ARR_TIME FLOAT) STORED AS PARQUET;
+> INSERT INTO TABLE hive_flights SELECT * FROM flights;
+```
 
 Comprobar que se pueden hacer consultas SQL tanto sobre "flights" como sobre "hive_flights", y que
 devuelven los mismos resultados.
@@ -123,7 +123,7 @@ La URI empleada es hive://hive@tr2-hiveserver2-1:10000/default
 
 Habiendo creado la conexión ya podemos crear el gráfico que queramos. En este caso, hemos creado un gráfico que muestra la evolución del número de vuelos por día.
 
-![Superset](./chart.png)
+![Superset](parte1/chart.png)
 
 
 ### Limpieza en Hive
@@ -150,3 +150,165 @@ Borramos todas las tablas.
 ```
 
 Y vemos que ya no hay tablas en Hive y que también se han borrado los ficheros en HDFS, a excepción de Fligths.parquet con el que trabajaba la tabla externa flights.
+
+
+2. [Integración HDFS - Kudu - Impala - herramientas BI](#integración-hdfs---kudu---impala---herramientas-bi)
+
+## Integración HDFS - Kudu - Impala - herramientas BI
+
+Para empezar, lanzamos hdfs, ejecutamos el siguiente export y lanzamos kudu:
+```bash
+docker compose up -d
+export KUDU_QUICKSTART_IP=$(ifconfig | grep "inet " | grep -Fv 127.0.0.1 |  awk '{print $2}' | tail -1)
+docker-compose -f quickstart.yml up -d
+ ```
+
+Para ejecutar Impala hacemos el siguiente docker run y abrimos una sesion interactiva.
+```bash
+docker run -d --name kudu-impala --network="tr2_default" \
+  -p 21000:21000 -p 21050:21050 -p 25000:25000 -p 25010:25010 -p 25020:25020 -v $(pwd):/workspace \
+  --memory=4096m -e JAVA_HOME="/usr" apache/kudu:impala-latest impala
+```
+
+Como hemos hecho en la primera parte, creamos el directorio /user en HDFS y le damos privilegios 777. 
+```bash
+$ docker exec -it tr2-namenode-1 /bin/bash
+bash-4.2$ hadoop fs -mkdir /user/             
+bash-4.2$ hadoop fs -chmod 777 /user
+```
+
+Y ahora creamos el drectorio /user/impala/vuelos copiamos Flights.parquet desde impala a HDFS.
+```bash
+$ docker exec -it kudu-impala /bin/bash
+impala@38dbda793e58:/opt/impala/bin$ hadoop fs -fs hdfs://namenode -mkdir /user/impala
+impala@38dbda793e58:/opt/impala/bin$ hadoop fs -fs hdfs://namenode -mkdir /user/impala/vuelos
+impala@61a5b09cca08:/opt/impala/bin$ hadoop fs -fs hdfs://namenode -copyFromLocal /workspace/Flights.parquet /user/impala/vuelos
+```
+
+Ahora lanzamos un impala-shell con `impala-sell` y creamos una tabla externa que apunte a Flights.parquet.
+```bash
+CREATE EXTERNAL TABLE IF NOT EXISTS flights (    FL_DATE DATE,    DEP_DELAY SMALLINT,    ARR_DELAY SMALLINT,    AIR_TIME SMALLINT,    DISTANCE SMALLINT,    DEP_TIME FLOAT,    ARR_TIME FLOAT) STORED AS PARQUET LOCATION 'hdfs://tr2-namenode-1/user/impala/vuelos';
+
+> DESCRIBE flights
++-----------+----------+---------+
+| name      | type     | comment |
++-----------+----------+---------+
+| fl_date   | date     |         |
+| dep_delay | smallint |         |
+| arr_delay | smallint |         |
+| air_time  | smallint |         |
+| distance  | smallint |         |
+| dep_time  | float    |         |
+| arr_time  | float    |         |
++-----------+----------+---------+
+```
+
+Sacamos el número de vuelos por día.
+```bash
+> SELECT fl_date, COUNT(fl_date) AS f_count FROM flights GROUP BY fl_date ORDER BY fl_date asc limit 10;
++------------+---------+
+| fl_date    | f_count |
++------------+---------+
+| 2006-01-01 | 17618   |
+| 2006-01-02 | 19156   |
+| 2006-01-03 | 19290   |
+| 2006-01-04 | 18869   |
+| 2006-01-05 | 19534   |
+| 2006-01-06 | 19553   |
+| 2006-01-07 | 16236   |
+| 2006-01-08 | 18506   |
+| 2006-01-09 | 19483   |
+| 2006-01-10 | 18541   |
++------------+---------+
+```
+
+Creamos ahora la tabla kudu_flights, que sí que se almacena en kudu.
+```bash
+> CREATE TABLE kudu_flights(
+    row_num BIGINT,
+    fl_date DATE,
+    dep_delay SMALLINT,
+    arr_delay SMALLINT,
+    air_time SMALLINT,
+    distance SMALLINT,
+    dep_time FLOAT,
+    arr_time FLOAT,
+    PRIMARY KEY (row_num)
+)
+PARTITION BY HASH PARTITIONS 4
+STORED AS KUDU;
+
+> INSERT INTO kudu_flights SELECT ROW_NUMBER() OVER (ORDER BY TRUE) AS row_num, fl_date, dep_delay, arr_delay, air_time, distance, dep_time, arr_time FROM flights;
+
+```
+
+Ahora sacamos el número de vuelos por día en kudu_flights.
+```bash
+> SELECT fl_date, COUNT(fl_date) AS f_count FROM kudu_flights GROUP BY fl_date order BY fl_date asc limit 10;
++------------+---------+
+| fl_date    | f_count |
++------------+---------+
+| 2006-01-01 | 17618   |
+| 2006-01-02 | 19156   |
+| 2006-01-03 | 19290   |
+| 2006-01-04 | 18869   |
+| 2006-01-05 | 19534   |
+| 2006-01-06 | 19553   |
+| 2006-01-07 | 16236   |
+| 2006-01-08 | 18506   |
+| 2006-01-09 | 19483   |
+| 2006-01-10 | 18541   |
++------------+---------+
+```
+
+Creamos tabla
+
+```bash
+> CREATE TABLE perday AS SELECT fl_date, COUNT(fl_date) AS f_count FROM flights GROUP BY fl_date;
+> SELECT * FROM perday limit 5;
++------------+---------+
+| fl_date    | f_count |
++------------+---------+
+| 2006-02-21 | 15987   |
+| 2006-01-23 | 18697   |
+| 2006-02-12 | 12415   |
+| 2006-01-08 | 18506   |
+| 2006-01-06 | 19553   |
++------------+---------+
+```
+
+Creamos la misma tabla, pero ahora la almacenamos en HDFS, en/user/impala/perday en formato parquet.
+```bash
+> CREATE TABLE perdayparquet STORED AS PARQUET LOCATION 'hdfs://tr2-namenode-1/user/impala/perday'
+AS SELECT fl_date, COUNT(fl_date) AS f_count FROM flights GROUP BY fl_date;
+
+```
+
+Creamos la tabla otra vez, pero ahora en formato csv.
+```bash
+> CREATE TABLE perdaycsv ROW FORMAT DELIMITED FIELDS TERMINATED BY ',' STORED AS TEXTFILE LOCATION 'hdfs://tr2-namenode-1/user/impala/perday' AS SELECT fl_date, count(fl_date) AS f_count FROM kudu_flights GROUP BY fl_date;
+```
+
+Movemos ambos archivos a la carpeta /workspace, les cambiamos el nombre y combprobamos el contenido del csv.(el del parquet no tiene sentido porque es un archivo binario)
+```bash
+impala@38dbda793e58:/opt/impala/bin$ hadoop fs -fs hdfs://namenode -copyToLocal /user/impala/perday/254f536396ee0b86-ed7cb22600000001_1660401067_data.0.parq /workspace
+impala@38dbda793e58:/opt/impala/bin$ hadoop fs -fs hdfs://namenode -copyToLocal /user/impala/perday/5d4f1f027a1425f2-9cb613f000000001_375930593_data.0.txt /workspace
+
+impala@094ec1d957fe:/opt/impala/bin$ mv /workspace/254f536396ee0b86-ed7cb22600000001_1660401067_data.0.parq /workspace/perdayparquet.parquet
+impala@094ec1d957fe:/opt/impala/bin$ mv /workspace/5d4f1f027a1425f2-9cb613f000000001_375930593_data.0.txt /workspace/perdaycsv.csv
+
+impala@094ec1d957fe:/opt/impala/bin$ cat /workspace/perdaycsv.csv | head -n 5
+2006-02-21,15987
+2006-01-23,18697
+2006-02-12,12415
+2006-01-08,18506
+2006-01-06,19553
+```
+
+Lanzamos apache superset y lanzamos impyla
+```bash
+docker run --rm -d -p 8080:8088 --name superset --network tr2_default acpmialj/ipmd:ssuperset
+docker exec superset pip install impyla
+```
+
+Accedemos a la interfaz de superset (http://localhost:8080/)
