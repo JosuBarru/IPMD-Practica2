@@ -286,7 +286,7 @@ AS SELECT fl_date, COUNT(fl_date) AS f_count FROM flights GROUP BY fl_date;
 
 Creamos la tabla otra vez, pero ahora en formato csv.
 ```bash
-> CREATE TABLE perdaycsv ROW FORMAT DELIMITED FIELDS TERMINATED BY ',' STORED AS TEXTFILE LOCATION 'hdfs://tr2-namenode-1/user/impala/perday' AS SELECT fl_date, count(fl_date) AS f_count FROM kudu_flights GROUP BY fl_date;
+> CREATE TABLE perdaycsv ROW FORMAT DELIMITED FIELDS TERMINATED BY ',' STORED AS TEXTFILE LOCATION 'hdfs://tr2-namenode-1/user/impala/perday' AS SELECT fl_date, count(fl_date) AS f_count FROM flights GROUP BY fl_date;
 ```
 
 Movemos ambos archivos a la carpeta /workspace, les cambiamos el nombre y combprobamos el contenido del csv.(el del parquet no tiene sentido porque es un archivo binario)
@@ -305,10 +305,44 @@ impala@094ec1d957fe:/opt/impala/bin$ cat /workspace/perdaycsv.csv | head -n 5
 2006-01-06,19553
 ```
 
-Lanzamos apache superset y lanzamos impyla
+Lanzamos apache superset editando el dockerfile que encontramos en docker hub en acpmialj/ipmd.
+
 ```bash
-docker run --rm -d -p 8080:8088 --name superset --network tr2_default acpmialj/ipmd:ssuperset
-docker exec superset pip install impyla
+docker build -t superset_impala .
+docker run --rm -d -p 8080:8088 --name impala_superset --network tr2_default superset_impala
 ```
 
-Accedemos a la interfaz de superset (http://localhost:8080/)
+
+Accedemos a la interfaz de superset (http://localhost:8080/) y nos conectamos con el siguiente URI: (impala://kudu-impala:21050/default). En este caso seleccionamos la tabla perdayparquet y creamos el grafico de vuelos por dia.
+
+
+![Superset](parte2/grafico2.png)
+
+
+### Limpieza en Hive
+
+En este momento tenemos las siguientes tablas en Imapla:
+
+```bash
+> show tables;
++---------------+
+| name          |
++---------------+
+| flights       |
+| kudu_flights  |
+| perday        |
+| perdaycsv     |
+| perdayparquet |
++---------------+
+
+```
+
+Borramos todas las tablas.
+
+```bash
+> DROP TABLE flights;
+> DROP TABLE kudu_flights;
+> DROP TABLE perday;
+> DROP TABLE perdaycsv;
+> DROP TABLE perdayparquet;
+```
